@@ -1,11 +1,11 @@
 # LAMMPS input template — substituted by gen_inputs.py
-# Material: Al2O3  | KIM: Sim_LAMMPS_SMTBQ_SallesPolitanoAmzallag_2016_AlO__SM_853967355976_000
+# Material: Al2O3  | KIM: Sim_LAMMPS_Buckingham_SunStirnerHagston_2006_AlO__SM_466046725502_000
 
 units           metal
 atom_style      charge
 boundary        p p p
 
-kim init Sim_LAMMPS_SMTBQ_SallesPolitanoAmzallag_2016_AlO__SM_853967355976_000 metal
+kim init Sim_LAMMPS_Buckingham_SunStirnerHagston_2006_AlO__SM_466046725502_000 metal
 
 read_data       lammps_init/Al2O3.lmp
 
