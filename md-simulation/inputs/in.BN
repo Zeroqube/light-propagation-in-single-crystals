@@ -1,15 +1,15 @@
 # LAMMPS input template — substituted by gen_inputs.py
-# Material: BN  | KIM: Tersoff_LAMMPS_KinaciHaskinsSevik_2012_BNC__MO_105008013807_000
+# Material: BN  | Local:  (tersoff)
 
 units           metal
 atom_style      charge
 boundary        p p p
 
-kim init Tersoff_LAMMPS_KinaciHaskinsSevik_2012_BNC__MO_105008013807_000 metal
+pair_style       tersoff
 
 read_data       lammps_init/BN.lmp
 
-kim interactions B N
+pair_coeff      * * potentials/BN.tersoff B N
 
 comm_modify     cutoff 4.0
 

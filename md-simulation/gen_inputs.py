@@ -83,7 +83,8 @@ def select_rows(csv_path: Path) -> dict[str, dict]:
     """Группирует строки CSV по material, возвращает лучшую (kim > local) на материал."""
     by_material: dict[str, dict] = {}
     with csv_path.open(encoding="utf-8") as f:
-        for row in csv.DictReader(f):
+        filtered_lines = (line for line in f if not line.strip().startswith('#'))
+        for row in csv.DictReader(filtered_lines):
             mat = row["material"]
             if row["status"] not in STATUS_PRIORITY:
                 continue
