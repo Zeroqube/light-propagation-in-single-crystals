@@ -1,11 +1,11 @@
 # LAMMPS input template — substituted by gen_inputs.py
 # Material: TiO2  | KIM: Sim_LAMMPS_Buckingham_MatsuiAkaogi_1991_TiO__SM_690504433912_000
 
-units           metal
+units          	real 
 atom_style      charge
 boundary        p p p
 
-kim init Sim_LAMMPS_Buckingham_MatsuiAkaogi_1991_TiO__SM_690504433912_000 metal
+kim init Sim_LAMMPS_Buckingham_MatsuiAkaogi_1991_TiO__SM_690504433912_000 real 
 
 read_data       lammps_init/TiO2.lmp
 

@@ -1,11 +1,11 @@
 # LAMMPS input template — substituted by gen_inputs.py
-# Material: ZnO  | KIM: Tersoff_LAMMPS_Erhart_Juslin_Goy_Nordlund_Mueller_Albe_ZnO__MO_616776018688_001
+# Material: ZnO  | KIM: Tersoff_LAMMPS_ErhartJuslinGoy_2006_ZnO__MO_616776018688_004
 
 units           metal
 atom_style      charge
 boundary        p p p
 
-kim init Tersoff_LAMMPS_Erhart_Juslin_Goy_Nordlund_Mueller_Albe_ZnO__MO_616776018688_001 metal
+kim init Tersoff_LAMMPS_ErhartJuslinGoy_2006_ZnO__MO_616776018688_004 metal
 
 read_data       lammps_init/ZnO.lmp
 
