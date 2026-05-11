@@ -11,7 +11,7 @@ read_data       lammps_init/BN.lmp
 
 pair_coeff      * * potentials/BN.tersoff B N
 
-comm_modify     cutoff 4.0
+comm_modify     cutoff 8.0
 
 # === Геометрическая минимизация ===
 min_style       cg
@@ -28,12 +28,19 @@ run             20000
 # === Прогрев 10 -> 300 K (NPT) ===
 unfix           fxnve
 unfix           fxlang
+fix             fxmom all momentum 100 linear 1 1 1
 fix             fxnpt all npt temp 10 300 0.1 iso 0.0 0.0 1.0
 run             20000
 
 # === Основной съём (NPT, 300 K) ===
 unfix           fxnpt
-fix             fxnpt_main all npt temp 300 300 0.1 iso 0.0 0.0 1.0
+
+thermo          1000
+thermo_style    custom step temp press vol lx ly lz pe etotal
+
+fix  fxmom all momentum 100 linear 1 1 1 angular
+fix  fxnpt_main all npt temp 300 300 0.1 aniso 0.0 0.0 1.0
+
 timestep        0.001
 dump            mydmp all custom 500 dumps/dump.BN id type x y z
 dump_modify     mydmp sort id

@@ -1,17 +1,17 @@
 # LAMMPS input template — substituted by gen_inputs.py
 # Material: TiO2  | KIM: Sim_LAMMPS_Buckingham_MatsuiAkaogi_1991_TiO__SM_690504433912_000
 
-units          	real 
+units           metal
 atom_style      charge
 boundary        p p p
 
-kim init Sim_LAMMPS_Buckingham_MatsuiAkaogi_1991_TiO__SM_690504433912_000 real 
+kim init Sim_LAMMPS_Buckingham_MatsuiAkaogi_1991_TiO__SM_690504433912_000 metal
 
 read_data       lammps_init/TiO2.lmp
 
 kim interactions Ti O
 
-comm_modify     cutoff 4.0
+comm_modify     cutoff 8.0
 
 # === Геометрическая минимизация ===
 min_style       cg
@@ -28,12 +28,19 @@ run             20000
 # === Прогрев 10 -> 300 K (NPT) ===
 unfix           fxnve
 unfix           fxlang
+fix             fxmom all momentum 100 linear 1 1 1
 fix             fxnpt all npt temp 10 300 0.1 iso 0.0 0.0 1.0
 run             20000
 
 # === Основной съём (NPT, 300 K) ===
 unfix           fxnpt
-fix             fxnpt_main all npt temp 300 300 0.1 iso 0.0 0.0 1.0
+
+thermo          1000
+thermo_style    custom step temp press vol lx ly lz pe etotal
+
+fix  fxmom all momentum 100 linear 1 1 1 angular
+fix  fxnpt_main all npt temp 300 300 0.1 aniso 0.0 0.0 1.0
+
 timestep        0.001
 dump            mydmp all custom 500 dumps/dump.TiO2 id type x y z
 dump_modify     mydmp sort id
