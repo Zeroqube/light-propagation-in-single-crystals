@@ -21,6 +21,7 @@ SrMoO4,mp-22640,,,,,,needs_dft,,"Scheelite; no classical potential or KIM model.
 AlN,mp-661,vashishta,Vashishta-2011,potentials/AlN.vashishta,literature,,local_pending,"Vashishta, Kalia, Nakano, Rino, J. Appl. Phys. 109, 033514 (2011)","Vashishta 3-body for AlN; NOT on KIM (verified) and NOT in lammps/potentials/ (only SiC, SiO, InP ship with LAMMPS). FILE PENDING - manual extraction from 2011 paper Table II required."
 BN,mp-984,tersoff,,potentials/BN.tersoff,local,in.BN,local,,"by hand"
 LiNbO3,mp-3731,,,,,,needs_dft,,"Ferroelectric perovskite-like; Jackson-Catlow shell model exists (J. Phys. C 1988) but standard LAMMPS pair_style does not support shell models out-of-box without core/shell drudes. Recommend DFT-MD."
+Al2O3,mp-1143,kim,Sim_LAMMPS_Buckingham_SunStirnerHagston_2006_AlO__SM_466046725502_000,,OpenKIM,,kim,"CHANGED TO Alt non-EQ: Sim_LAMMPS_Buckingham_SunStirnerHagston_2006_AlO__SM_466046725502_000."
 Al2O3,mp-1143,buck/coul/long,Matsui-1994,potentials/Al2O3.buck,literature,,local_pending,"Matsui, Mineral. Mag. 58A, 571 (1994)","Matsui Buckingham for corundum; backup of kim row. FILE PENDING."
 BeO,mp-2542,,,,,,needs_dft,,"Wurtzite BeO; very limited classical potential literature, no production-grade KIM model verified. Use DFT-MD."
 ScAlMgO4,mp-1096925,,,,,,needs_dft,,"SCAM substrate; quaternary Sc-Al-Mg-O, no KIM model, no published classical potential. Use DFT-MD."
