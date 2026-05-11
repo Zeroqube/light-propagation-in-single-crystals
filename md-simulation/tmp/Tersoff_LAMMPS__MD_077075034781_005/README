@@ -1,0 +1,40 @@
+This model driver is based on the LAMMPS implementation of the Tersoff
+potential.  LAMMPS is available at http://lammps.sandia.gov/.
+
+A model has to provide two parameter files. The first one is a
+settings file that must list all used particle types as
+space-separated chemical symbols on the first line. This model driver
+supports modifications of the default potential which can be chosen on
+the second line of the settings file. If it is empty, the standard
+potential form is used. If it is the string "ZBL", a ZBL repulsive
+term is added.
+
+The second file is a LAMMPS-compatible parameter file.
+Standard form: For information about this parameter file and the form
+               of the potential see
+               https://lammps.sandia.gov/doc/pair_tersoff.html for now.
+ZBL repulsion: For information about this parameter file and the form
+               of the potential see
+               https://lammps.sandia.gov/doc/pair_tersoff_zbl.html for now.
+
+The core part of energy/force calculation is adapted from code in
+LAMMPS.  LAMMPS is licensed under GPLv2, which then also applies to
+the whole model driver.  See the LICENSE file for details.
+
+The directory "helpers" contains a python script to convert different
+variants of Tersoff-type potentials to the input file format expected
+by this model driver (and LAMMPS).  There are also some example input
+files for the script.
+
+Author: Tobias Brink <t.brink@mpie.de>
+
+Thanks to Mingjian Wen for adding process_dEdr support.
+
+
+Contributing
+============
+
+You can find the code repository at https://github.com/t-brink/kim-tersoff.
+If you find any bug you can either send me an e-mail or report it at
+Github. Please include a test case or rationale. Patches are also
+welcome either in the form of a diff or as a pull request on Github.

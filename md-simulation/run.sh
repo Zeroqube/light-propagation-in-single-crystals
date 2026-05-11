@@ -25,7 +25,7 @@ conda activate lammps-kim
 
 # --- Выбор материала ---
 # Список готовых к запуску материалов (status=kim в potentials.csv)
-MATERIALS=(GaN SiC BN Al2O3 SiO2 TiO2 ZnO CdS)
+MATERIALS=(GaN SiC BN Al2O3 SiO2 TiO2 CdS ZnO)
 
 if [ -n "${SLURM_ARRAY_TASK_ID}" ]; then
     MATERIAL="${MATERIALS[${SLURM_ARRAY_TASK_ID}]}"
