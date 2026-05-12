@@ -11,7 +11,7 @@ read_data       lammps_init/SiO2.lmp
 
 kim interactions Si O
 
-comm_modify     cutoff 8.0
+# comm_modify     cutoff 8.0
 
 # === Геометрическая минимизация ===
 min_style       cg
@@ -29,19 +29,27 @@ run             20000
 unfix           fxnve
 unfix           fxlang
 fix             fxmom all momentum 100 linear 1 1 1
-fix             fxnpt all npt temp 10 300 0.1 iso 0.0 0.0 1.0
-run             20000
-
-# === Основной съём (NPT, 300 K) ===
+fix             fxnpt all npt temp 10 300 0.1 aniso 0.0 0.0 1.0
+timestep	0.001
+run             30000
 unfix           fxnpt
 
-thermo          1000
+# === Равновесие при 300 K (NPT aniso, 200 пс) ===
+# Ячейка должна выйти на плато: lx, ly, lz и press стабильны.
+# Контролируй thermo-вывод перед тем как переходить к съёму.
+thermo          500
 thermo_style    custom step temp press vol lx ly lz pe etotal
 
-fix  fxmom all momentum 100 linear 1 1 1 angular
-fix  fxnpt_main all npt temp 300 300 0.1 aniso 0.0 0.0 1.0
+fix             fxnpt_eq all npt temp 300 300 0.1 aniso 0.0 0.0 1.0
+run             30000
+unfix           fxnpt_eq
 
-timestep        0.001
-dump            mydmp all custom 500 dumps/dump.SiO2 id type x y z
+# === Основной съём (NVT, 300 K, 200 пс) ===
+# NVT с зафиксированной равновесной ячейкой: чистые координатные флуктуации
+# без смешивания с флуктуациями объёма.
+fix             fxnvt all nvt temp 300 300 0.1
+dump            mydmp all custom 500 dumps/dump.SiO2 id type x y z vx vy vz
 dump_modify     mydmp sort id
-run             100000
+run             70000
+unfix           fxnvt
+unfix           fxmom

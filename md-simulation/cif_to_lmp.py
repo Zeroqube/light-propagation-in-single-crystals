@@ -10,7 +10,7 @@ from pymatgen.io.lammps.data import LammpsData
 import sys
 
 # --- Настройки ---
-SUPERCELL_DIMS = (2, 2, 4)   # мультипликаторы дублирования ячейки (можно изменить)
+SUPERCELL_DIMS = (5, 5, 5)   # мультипликаторы дублирования ячейки (можно изменить)
 
 # Директории относительно этого скрипта
 SCRIPT_DIR = Path(__file__).resolve().parent
