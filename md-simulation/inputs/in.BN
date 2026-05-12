@@ -1,5 +1,5 @@
 # LAMMPS input template — substituted by gen_inputs.py
-# Material: BN  | Local:  (tersoff)
+# Material: BN  | KIM: Sim_LAMMPS_ExTeP_LosKroesAlbe_2017_BN__SM_692329995993_001
 
 units           metal
 atom_style      charge
