@@ -16,7 +16,7 @@ from pymatgen.core import Structure
 ROOT = Path(__file__).parent.parent
 
 # === НАСТРОЙКИ ===
-API_KEY = ""  # замените на реальный ключ
+API_KEY = "wX02bSpD09q9GeIBnaK1YK82qyBrOFHZ"  # замените на реальный ключ
 INPUT_CSV = ROOT / "crystals-search" / "crystals_540nm.csv"
 OUTPUT_CSV = ROOT/ "md-simulation" / "crystals_540nm_mp.csv"
 
@@ -62,6 +62,12 @@ KNOWN_IDS = {
     "PbTiO3": "mp-20459",       # P4mm
     "YVO4": "mp-19133",         # I4₁/amd (циркон)
     "CaWO4": "mp-18921",        # I4₁/a
+    "MgO": "mp-1265",
+    # "ZnS": "",
+    "CaO": "mp-2605",
+    "CdO": "mp-1132",
+    "MgS": "mp-1315",
+    # "MgCO3": "",
 }
 
 def get_mp_id(formula, mpr):
