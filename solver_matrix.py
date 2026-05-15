@@ -1,13 +1,31 @@
 import numpy as np
+from pymatgen.core import Structure
 
-N0 = 10 # количество слоёв вверх и столько же вниз, по которым считаем 
-        # сумму воздействия на данный диполь
+cif_path = '/home/ubun/projects/light-propagation-in-single-crystals/md-simulation/output/unit_cells/CaCO3.cif'
+struct = Structure.from_file(cif_path)
 
 
 
-def tau1(x, y, z, z0):
-    """
-    Коэффициент передачи tau_1: ищем поле, создаваемое диполем из точки (x, y, z) 
-    в текущеем узле (0,0, z0).
-    """
-    r = np.sqrt(x**2 + y**2 + (z - z0)**2)
+N_perp = 1 # количество слоёв вверх и столько же вниз
+
+N = 1 # кол-во ячеек вдоль направления распространения
+
+x_0_arr = []
+y_0_arr = []
+z_0_arr = []
+types = []
+
+for site in struct:
+        x, y, z = site.coords
+        atom_type = site.species_string
+        
+        x_0_arr.append(x)
+        y_0_arr.append(y)
+        z_0_arr.append(z)
+        types.append(atom_type)
+
+print(types)
+
+print(x_0_arr)
+
+
