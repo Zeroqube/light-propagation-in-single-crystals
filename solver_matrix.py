@@ -4,6 +4,10 @@ from pymatgen.core import Structure
 cif_path = '/home/ubun/projects/light-propagation-in-single-crystals/md-simulation/output/unit_cells/CaCO3.cif'
 struct = Structure.from_file(cif_path)
 
+params = {
+        'Ca' : {'m' : 40, 'k' : 1.0},
+        'O' : {'m' : 16, 'k' : 1.0},
+}
 
 
 N_perp = 1 # количество слоёв вверх и столько же вниз
