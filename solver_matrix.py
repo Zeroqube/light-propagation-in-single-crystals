@@ -1,6 +1,7 @@
 '''
 Todo: подумать над оптимизацией: tau1, нет смысла считать от -N, N, посчитать одну четверть и умножить на 4?
-Написать tau2, сложение матрицы, взятие обратной
+
+Замечание: матрицы tau1, tau2, tau3 не зависят от параметров, которые оптимизируем, их достаточно посчитать один раз.
 '''
 
 
@@ -169,7 +170,9 @@ def replicate_along_z(structure: Structure, N: int):
 
 ### дальше моя реализация физики
 omega = 1e15
-c = 3e8 ### СИ или СГС?
+c = 2.998e10 
+e = 4.803e-10
+
 cif_path = '/home/ubun/projects/light-propagation-in-single-crystals/md-simulation/output/unit_cells/CaCO3.cif'
 struct = Structure.from_file(cif_path)
 
@@ -182,30 +185,26 @@ N_perp = 0 # количество слоёв вверх и столько же �
 
 N = 1 # кол-во ячеек вдоль направления распространения
 
-def tau1(params, struct):
-    struct, _ = rotate_structure_optical_axis_to_x(struct)
-    Lx, Ly, Lz = get_lattice_dimensions(struct)
-    x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
-    S = len(types_all) / N
-    matr = np.zeros((3 * N * S, 3 * N * S), dtype = 'complex')
-    for i in range(N * S):
+def tau1(Lx, Ly, x_all, y_all, z_all, L):
+    matr = np.zeros((3 * L, 3 * L), dtype = 'complex')
+    for i in range(L):
         x0 = x_all[i]
         y0 = y_all[i]
         z0 = z_all[i]
         row0 = matr[3 * i]
         row1 = matr[3 * i + 1]
         row2 = matr[3 * i + 2]
-        for j in range(N * S):
+        for j in range(L):
                 x = x_all[j]
                 y = y_all[j]
                 z = z_all[j]
                 sum = np.zeros((3, 3), dtype = 'complex')
-                for l in range(- N_perp, N_perp + 1):
-                        for n in range(-N_perp, N_perp + 1):
-                                if i == j and l == 0 and n == 0:
+                for nx in range(- N_perp, N_perp + 1):
+                        for ny in range(-N_perp, N_perp + 1):
+                                if i == j and nx == 0 and ny == 0:
                                         continue
-                                x_cur = x + Lx * l
-                                y_cur = y + Ly * n
+                                x_cur = x + Lx * nx
+                                y_cur = y + Ly * ny
                                 z_cur = z
                                 lx = x0 - x_cur
                                 ly = y0 - y_cur
@@ -217,17 +216,19 @@ def tau1(params, struct):
                                 # E_y = (3 * (dx * lx + dy * ly + dz * lz) ly / r ** 5 - ly / r ** 3) * np.exp(- 1j * omega * r / c)
                                 # E_z = (3 * (dx * lx + dy * ly + dz * lz) lz/ r ** 5 - lz / r ** 3) * np.exp(- 1j * omega * r / c)
 
-                                sum[0][0] += (3 * lx**2 / r**5 - 1 / r**3) * np.exp(- 1j * omega * r / c)
-                                sum[0][1] += (3 * ly * lx / r**5) * np.exp(- 1j * omega * r / c)
-                                sum[0][2] += (3 * lz * lx / r**5) * np.exp(- 1j * omega * r / c)
+                                phase = np.exp(-1j * omega * r / c)
 
-                                sum[1][0] += (3 * lx * ly / r**5) * np.exp(- 1j * omega * r / c)
-                                sum[1][1] += (3 * ly**2 / r**5 - 1 / r**3) * np.exp(- 1j * omega * r / c)
-                                sum[1][2] += (3 * lz * ly / r**5) * np.exp(- 1j * omega * r / c)
+                                sum[0][0] += (3 * lx**2 / r**5 - 1 / r**3) * phase
+                                sum[0][1] += (3 * ly * lx / r**5) * phase
+                                sum[0][2] += (3 * lz * lx / r**5) * phase
 
-                                sum[2][0] += (3 * lz * lx / r**5) * np.exp(- 1j * omega * r / c)
-                                sum[2][1] += (3 * ly * lz / r**5) * np.exp(- 1j * omega * r / c)
-                                sum[2][2] += (3 * lz**2 / r**5 - 1 / r**3) * np.exp(- 1j * omega * r / c)
+                                sum[1][0] += (3 * lx * ly / r**5) * phase
+                                sum[1][1] += (3 * ly**2 / r**5 - 1 / r**3) * phase
+                                sum[1][2] += (3 * lz * ly / r**5) * phase
+
+                                sum[2][0] += (3 * lz * lx / r**5) * phase
+                                sum[2][1] += (3 * ly * lz / r**5) * phase
+                                sum[2][2] += (3 * lz**2 / r**5 - 1 / r**3) * phase
 
                 for p in range(3):
                         row0[3 * j + p] = sum[0][p]
@@ -235,10 +236,177 @@ def tau1(params, struct):
                         row2[3 * j + p] = sum[2][p]
         return matr
                 
+def tau2(Lx, Ly, x_all, y_all, z_all, L):
+    matr = np.zeros((3 * L, 3 * L), dtype = 'complex')
+    for i in range(L):
+        x0 = x_all[i]
+        y0 = y_all[i]
+        z0 = z_all[i]
+        row0 = matr[3 * i]
+        row1 = matr[3 * i + 1]
+        row2 = matr[3 * i + 2]
+        for j in range(L):
+                x = x_all[j]
+                y = y_all[j]
+                z = z_all[j]
+                sum = np.zeros((3, 3), dtype = 'complex')
+                for nx in range(- N_perp, N_perp + 1):
+                        for ny in range(-N_perp, N_perp + 1):
+                                if i == j and nx == 0 and ny == 0:
+                                        continue
+                                x_cur = x + Lx * nx
+                                y_cur = y + Ly * ny
+                                z_cur = z
+                                lx = x0 - x_cur
+                                ly = y0 - y_cur
+                                lz = z0 - z_cur
+                                r = np.sqrt(lx ** 2 + ly ** 2 + lz ** 2)
+                                
+
+                                # E_x = (3 * (dx * lx + dy * ly + dz * lz) lx / r ** 4 - lx / r ** 2) * np.exp(- 1j * omega * r / c) / c 
+                                # E_y = (3 * (dx * lx + dy * ly + dz * lz) ly / r ** 4 - ly / r ** 2) * np.exp(- 1j * omega * r / c) / c
+                                # E_z = (3 * (dx * lx + dy * ly + dz * lz) lz/ r ** 4 - lz / r ** 2) * np.exp(- 1j * omega * r / c) / c
+
+                                phase = np.exp(-1j * omega * r / c)
+
+                                sum[0][0] += (3 * lx**2 / r**4 - 1 / r**2) * phase / c
+                                sum[0][1] += (3 * ly * lx / r**4) * phase / c
+                                sum[0][2] += (3 * lz * lx / r**4) * phase / c
+
+                                sum[1][0] += (3 * lx * ly / r**4) * phase / c
+                                sum[1][1] += (3 * ly**2 / r**4 - 1 / r**2) * phase / c
+                                sum[1][2] += (3 * lz * ly / r**4) * phase / c
+
+                                sum[2][0] += (3 * lz * lx / r**4) * phase / c
+                                sum[2][1] += (3 * ly * lz / r**4) * phase / c
+                                sum[2][2] += (3 * lz**2 / r**4 - 1 / r**2) * phase / c
+
+                for p in range(3):
+                        row0[3 * j + p] = sum[0][p]
+                        row1[3 * j + p] = sum[1][p]
+                        row2[3 * j + p] = sum[2][p]
+        return matr
 
 
+def tau3(Lx, Ly, x_all, y_all, z_all, L):
+    matr = np.zeros((3 * L, 3 * L), dtype = 'complex')
+    for i in range(L):
+        x0 = x_all[i]
+        y0 = y_all[i]
+        z0 = z_all[i]
+        row0 = matr[3 * i]
+        row1 = matr[3 * i + 1]
+        row2 = matr[3 * i + 2]
+        for j in range(L):
+                x = x_all[j]
+                y = y_all[j]
+                z = z_all[j]
+                sum = np.zeros((3, 3), dtype = 'complex')
+                for nx in range(- N_perp, N_perp + 1):
+                        for ny in range(-N_perp, N_perp + 1):
+                                if i == j and nx == 0 and ny == 0:
+                                        continue
+                                x_cur = x + Lx * nx
+                                y_cur = y + Ly * ny
+                                z_cur = z
+                                lx = x0 - x_cur
+                                ly = y0 - y_cur
+                                lz = z0 - z_cur
+                                r = np.sqrt(lx ** 2 + ly ** 2 + lz ** 2)
+                                
+
+                                # E_x = ((dx * lx + dy * ly + dz * lz) lx / r ** 3 - lx / r) * np.exp(- 1j * omega * r / c) / c**2
+                                # E_y = ((dx * lx + dy * ly + dz * lz) ly / r ** 3 - ly / r) * np.exp(- 1j * omega * r / c) / c**2
+                                # E_z = ((dx * lx + dy * ly + dz * lz) lz/ r ** 3 - lz / r) * np.exp(- 1j * omega * r / c) / c**2
+
+                                phase = np.exp(-1j * omega * r / c)
+
+                                sum[0][0] += (lx**2 / r**3 - 1 / r) * phase / c**2
+                                sum[0][1] += (3 * ly * lx / r**3) * phase / c**2
+                                sum[0][2] += (3 * lz * lx / r**3) * phase / c**2
+
+                                sum[1][0] += (3 * lx * ly / r**3) * phase / c**2
+                                sum[1][1] += (3 * ly**2 / r**3 - 1 / r) * phase / c**2
+                                sum[1][2] += (3 * lz * ly / r**3) * phase / c**2
+
+                                sum[2][0] += (3 * lz * lx / r**3) * phase / c**2
+                                sum[2][1] += (3 * ly * lz / r**3) * phase / c**2
+                                sum[2][2] += (3 * lz**2 / r**3 - 1 / r) * phase / c**2
+
+                for p in range(3):
+                        row0[3 * j + p] = sum[0][p]
+                        row1[3 * j + p] = sum[1][p]
+                        row2[3 * j + p] = sum[2][p]
+        return matr
 
 
+def M(params,types_all, L):
+        matr = np.eye(3 * L)
+        for i in range(L):
+                type = types_all[i]
+                m = params[type]['m']
+                for j in range(3):
+                        matr[3*i + j] *= m / e **2
+        return matr
+
+def K(params, types_all, L):
+        L = len(types_all)
+        matr = np.eye(3 * L)
+        for i in range(L):
+                type = types_all[i]
+                k = params[type]['k']
+                for j in range(3):
+                        matr[3 * i + j] *= k / e **2
+        return matr
+
+def q(struct, params, theta):
+        struct, _ = rotate_structure_optical_axis_to_x(struct)
+        Lx, Ly, Lz = get_lattice_dimensions(struct)
+        x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
+        L = len(types_all)
+        ### реплицирование, потом передавать уже нормальные ячейки
+        tau_1 = tau1(Lx, Ly, x_all, y_all, z_all, L)
+        tau_2 = tau2(Lx, Ly, x_all, y_all, z_all, L)
+        tau_3 = tau3(Lx, Ly, x_all, y_all, z_all, L)
+        M_matr = M(params, types_all, L)
+        K_matr = K(params, types_all, L)
+        A = -omega**2 * M_matr + K_matr - tau_1 -1j * omega * tau_2 + omega **2 * tau_3
+        A_inv = np.linalg.inv(A)
+        b = np.zeros(3 * L)
+        for i in range(L):
+              z = z_all[i]
+              phase = np.exp(-1j * omega * z / c)
+              theta_rad = theta / 180 * np.pi
+              b[3 * i] = np.cos(theta_rad) * phase
+              b[3 * i + 1] = np.sin(theta) * phase
+              b[3 * i + 2] = 0
+        q = A_inv @ b
+        return q
+
+def q_mod(struct, params, theta):
+        struct, _ = rotate_structure_optical_axis_to_x(struct)
+        Lx, Ly, Lz = get_lattice_dimensions(struct)
+        x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
+        L = len(types_all)
+        ### реплицирование, потом передавать уже нормальные ячейки
+        tau_1 = tau1(Lx, Ly, x_all, y_all, z_all, L)
+        tau_2 = tau2(Lx, Ly, x_all, y_all, z_all, L)
+        tau_3 = tau3(Lx, Ly, x_all, y_all, z_all, L)
+        M_matr = M(params, types_all, L)
+        K_matr = K(params, types_all, L)
+        A = -omega**2 * M_matr + K_matr - tau_1 -1j * omega * tau_2 + omega **2 * tau_3
+        b = np.zeros(3 * L)
+        for i in range(L):
+              z = z_all[i]
+              phase = np.exp(-1j * omega * z / c)
+              theta_rad = theta / 180 * np.pi
+              b[3 * i] = np.cos(theta_rad) * phase
+              b[3 * i + 1] = np.sin(theta) * phase
+              b[3 * i + 2] = 0
+        q = np.linalg.solve(A, b)
+        return q
+
+                
 
                     
 
