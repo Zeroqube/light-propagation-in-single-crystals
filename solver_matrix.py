@@ -1,12 +1,13 @@
 '''
 Todo: подумать над оптимизацией: tau1, нет смысла считать от -N, N, посчитать одну четверть и умножить на 4?
+Плохо сдвигаю ячейку!
 
 Замечание: матрицы tau1, tau2, tau3 не зависят от параметров, которые оптимизируем, их достаточно посчитать один раз.
 '''
 
-
+import numba
 import numpy as np
-from pymatgen.core import Structure
+from pymatgen.core import Structure, Lattice
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
@@ -14,18 +15,22 @@ import time
 
 ### Дальше часть кода про поворот кристалла, взятая с дипсика
 
-def get_lattice_dimensions(structure: Structure):
+ORTHO_MATRIX = [
+    [1, 0, 0],
+    [1, 2, 0],
+    [0, 0, 1]
+]
+
+NEEDS_ORTHO = {"hexagonal", "trigonal"}
+
+
+def get_lattice_vectors(structure):
     """
-    Возвращает размеры ячейки по осям X и Y (поперечные направления).
-    
-    Returns:
-        Lx, Ly: размеры в Å
+    Возвращает векторы решётки в сантиметрах (СГС).
+    Матрица в pymatgen имеет форму (3, 3), где строки — это векторы a, b, c.
     """
-    lattice = structure.lattice.matrix
-    Lx = np.linalg.norm(lattice[0])  # вектор a
-    Ly = np.linalg.norm(lattice[1])  # вектор b
-    Lz = np.linalg.norm(lattice[2])  # вектор c
-    return Lx, Ly, Lz
+    lattice = structure.lattice.matrix * 1e-8  # Из Ангстремов в см
+    return lattice[0], lattice[1], lattice[2]
 
 def get_optical_axis_direction(structure: Structure):
     """
@@ -63,6 +68,7 @@ def get_optical_axis_direction(structure: Structure):
         return None, 'biaxial'
 
 
+
 def rotate_structure_optical_axis_to_x(
     structure: Structure,
     manual_axis: np.ndarray = None
@@ -71,7 +77,7 @@ def rotate_structure_optical_axis_to_x(
     optical_axis, crystal_type = get_optical_axis_direction(structure)
 
     if crystal_type == 'cubic':
-        return structure, np.array([1.0, 0.0, 0.0])
+        return structure.copy(), np.array([1.0, 0.0, 0.0])
 
     if crystal_type == 'biaxial':
         if manual_axis is None:
@@ -79,143 +85,109 @@ def rotate_structure_optical_axis_to_x(
 
         optical_axis = manual_axis / np.linalg.norm(manual_axis)
 
-    target_dir = np.array([1.0, 0.0, 0.0])
-
     optical_axis = optical_axis / np.linalg.norm(optical_axis)
 
-    v = np.cross(optical_axis, target_dir)
-    s = np.linalg.norm(v)
-    c = np.dot(optical_axis, target_dir)
+    target = np.array([1.0, 0.0, 0.0])
 
-    if s < 1e-10:
+    cross = np.cross(optical_axis, target)
+    norm = np.linalg.norm(cross)
 
-        if c > 0:
-            rotation_matrix = np.eye(3)
+    if norm < 1e-12:
 
+        if np.dot(optical_axis, target) > 0:
+            rot_matrix = np.eye(3)
         else:
-            perp = np.array([0.0, 1.0, 0.0])
-
-            rot_axis = np.cross(optical_axis, perp)
-            rot_axis = rot_axis / np.linalg.norm(rot_axis)
-
-            rotation_matrix = Rotation.from_rotvec(
-                np.pi * rot_axis
+            rot_matrix = Rotation.from_rotvec(
+                np.pi * np.array([0,1,0])
             ).as_matrix()
 
     else:
-        rot_axis = v / s
+        axis = cross / norm
+        angle = np.arccos(np.clip(np.dot(optical_axis, target), -1, 1))
 
-        angle = np.arccos(np.clip(c, -1.0, 1.0))
-
-        rotation_matrix = Rotation.from_rotvec(
-            angle * rot_axis
+        rot_matrix = Rotation.from_rotvec(
+            angle * axis
         ).as_matrix()
 
-    rotated = structure.copy()
+    new_lattice = rot_matrix @ structure.lattice.matrix.T
+    new_lattice = new_lattice.T
 
-    # Вращаем атомы
-    for idx, site in enumerate(rotated.sites):
+    new_coords = []
 
-        new_coords = rotation_matrix @ site.coords
+    for site in structure:
+        new_coords.append(rot_matrix @ site.coords)
 
-        rotated.replace(
-            idx,
-            site.species,
-            coords=new_coords,
-            coords_are_cartesian=True
-        )
+    rotated = Structure(
+        lattice=Lattice(new_lattice),
+        species=[site.species for site in structure],
+        coords=new_coords,
+        coords_are_cartesian=True
+    )
 
-    # Вращаем решетку
-    new_lattice_matrix = (
-        rotation_matrix @ structure.lattice.matrix.T
-    ).T
+    return rotated, target
 
-    from pymatgen.core import Lattice
 
-    rotated.lattice = Lattice(new_lattice_matrix)
-
-    return rotated, np.array([1.0, 0.0, 0.0])
 
 
 def replicate_along_z(structure: Structure, N: int):
     """
-    Размножает структуру вдоль оси Z.
-    
-    Параметры:
-        structure: исходная структура
-        N: количество ячеек вдоль Z
-        
-    Возвращает:
-        x, y, z: массивы координат всех атомов
-        types: массив типов атомов
+    Правильная репликация ячейки вдоль вектора трансляции решётки.
+    Поскольку волна идет вдоль z, предполагается, что после всех поворотов 
+    вектор c_vec направлен (или соосен) с направлением трансляции кристалла.
     """
-    # Получаем вектор вдоль Z (третий вектор решётки)
-    z_vector = structure.lattice.matrix[2]
-    z_thickness = np.linalg.norm(z_vector)
+    # Получаем базовые декартовы координаты атомов в см
+    coords0 = structure.cart_coords * 1e-8
+    types0 = np.array([site.species_string for site in structure])
     
-    # Забираем координаты исходных атомов
-    x_list = []
-    y_list = []
-    z_list = []
-    types_list = []
+    # Получаем актуальный вектор трансляции c_vec (в см) из повернутой структуры
+    _, _, c_vec = get_lattice_vectors(structure)
     
-    for site in structure:
-        x_list.append(site.coords[0] * 1e-8)
-        y_list.append(site.coords[1] * 1e-8)
-        z_list.append(site.coords[2] * 1e-8)
-        types_list.append(site.species_string)
+    x_all, y_all, z_all, types_all = [], [], [], []
     
-    x_0 = np.array(x_list)
-    y_0 = np.array(y_list)
-    z_0 = np.array(z_list)
-    types_0 = np.array(types_list)
-    
-    # Размножаем
-    x_all = []
-    y_all = []
-    z_all = []
-    types_all = []
-    
-    for i in range(N):
-        shift_z = i * z_thickness
-        x_all.append(x_0)
-        y_all.append(y_0)
-        z_all.append(z_0 + shift_z)
-        types_all.append(types_0)
-    
-    x_all = np.concatenate(x_all)
-    y_all = np.concatenate(y_all)
-    z_all = np.concatenate(z_all)
-    types_all = np.concatenate(types_all)
-    
-    return x_all, y_all, z_all, types_all
+    # Репликация происходит строго сдвигом на вектор решётки n * c_vec
+    for n in range(N):
+        shift = n * c_vec
+        
+        x_all.append(coords0[:, 0] + shift[0])
+        y_all.append(coords0[:, 1] + shift[1])
+        z_all.append(coords0[:, 2] + shift[2])
+        types_all.append(types0)
+        
+    return (
+        np.concatenate(x_all),
+        np.concatenate(y_all),
+        np.concatenate(z_all),
+        np.concatenate(types_all)
+    )
 
 
 ### дальше моя реализация физики
-omega = 3e15
+# omega = 3e15
+omega = 9e17
 c = 2.998e10 
 e = 4.803e-10
 
-cif_path = '/home/ubun/projects/light-propagation-in-single-crystals/md-simulation/output/unit_cells/CaCO3.cif'
-struct = Structure.from_file(cif_path)
+
 
 params = {
     'C'  : {'m': 1.6e-26,  'k': 4.7e6},
     'O'  : {'m': 4.3e-26,  'k': 1.8e7},
-    'Mg' : {'m': 2.3e-26,  'k': 3.1e6},
-    'S'  : {'m': 8.3e-26,  'k': 2.0e7},
+    'Mg' : {'m': 3e-26,  'k': 3.1e7}, # 'm': 2.3e-26
+    'S'  : {'m': 3e-26,  'k': 2.0e7}, # 'm': 8.3e-26
     'Ca' : {'m': 4.7e-26,  'k': 4.1e6},
     'Zn' : {'m': 1.8e-25,  'k': 3.6e7},
     'Cd' : {'m': 4.0e-25,  'k': 7.4e7},
 }      
 
-N_perp = 10 # количество слоёв вверх и столько же вниз
+N_perp = 20 # количество слоёв вверх и столько же вниз
 
-N = 10 # кол-во ячеек вдоль направления распространения
+N = 1000 # кол-во ячеек вдоль направления распространения
 
-def tau1(Lx, Ly, x_all, y_all, z_all, L):
+@numba.jit
+def tau1(a_vec, b_vec, x_all, y_all, z_all, L, N, N_perp):
         matr = np.zeros((3 * L, 3 * L), dtype = 'complex')
         for i in range(L):
+                print('tau1:', i)
                 x0 = x_all[i]
                 y0 = y_all[i]
                 z0 = z_all[i]
@@ -231,9 +203,10 @@ def tau1(Lx, Ly, x_all, y_all, z_all, L):
                                 for ny in range(-N_perp, N_perp + 1):
                                         if i == j and nx == 0 and ny == 0:
                                                 continue
-                                        x_cur = x + Lx * nx
-                                        y_cur = y + Ly * ny
-                                        z_cur = z
+                                        shift = nx * a_vec + ny * b_vec
+                                        x_cur = x + shift[0]
+                                        y_cur = y + shift[1]
+                                        z_cur = z + shift[2]
                                         lx = x0 - x_cur
                                         ly = y0 - y_cur
                                         lz = z0 - z_cur
@@ -264,9 +237,11 @@ def tau1(Lx, Ly, x_all, y_all, z_all, L):
                                 row2[3 * j + p] = sum[2][p]
         return matr
                 
-def tau2(Lx, Ly, x_all, y_all, z_all, L):
+@numba.jit
+def tau2(a_vec, b_vec, x_all, y_all, z_all, L, N, N_perp):
         matr = np.zeros((3 * L, 3 * L), dtype = 'complex')
         for i in range(L):
+                print('tau2:', i)
                 x0 = x_all[i]
                 y0 = y_all[i]
                 z0 = z_all[i]
@@ -282,9 +257,10 @@ def tau2(Lx, Ly, x_all, y_all, z_all, L):
                                 for ny in range(-N_perp, N_perp + 1):
                                         if i == j and nx == 0 and ny == 0:
                                                 continue
-                                        x_cur = x + Lx * nx
-                                        y_cur = y + Ly * ny
-                                        z_cur = z
+                                        shift = nx * a_vec + ny * b_vec
+                                        x_cur = x + shift[0]
+                                        y_cur = y + shift[1]
+                                        z_cur = z + shift[2]
                                         lx = x0 - x_cur
                                         ly = y0 - y_cur
                                         lz = z0 - z_cur
@@ -316,9 +292,11 @@ def tau2(Lx, Ly, x_all, y_all, z_all, L):
         return matr
 
 
-def tau3(Lx, Ly, x_all, y_all, z_all, L):
+@numba.jit
+def tau3(a_vec, b_vec, x_all, y_all, z_all, L, N, N_perp):
         matr = np.zeros((3 * L, 3 * L), dtype = 'complex')
         for i in range(L):
+                print('tau3:', i)
                 x0 = x_all[i]
                 y0 = y_all[i]
                 z0 = z_all[i]
@@ -334,9 +312,10 @@ def tau3(Lx, Ly, x_all, y_all, z_all, L):
                                 for ny in range(-N_perp, N_perp + 1):
                                         if i == j and nx == 0 and ny == 0:
                                                 continue
-                                        x_cur = x + Lx * nx
-                                        y_cur = y + Ly * ny
-                                        z_cur = z
+                                        shift = nx * a_vec + ny * b_vec
+                                        x_cur = x + shift[0]
+                                        y_cur = y + shift[1]
+                                        z_cur = z + shift[2]
                                         lx = x0 - x_cur
                                         ly = y0 - y_cur
                                         lz = z0 - z_cur
@@ -387,41 +366,40 @@ def K(params, types_all, L):
                         matr[3 * i + j] *= k / e **2
         return matr
 
-def q(struct, params, theta):
-        print("Start...")
-        struct, _ = rotate_structure_optical_axis_to_x(struct)
-        Lx, Ly, Lz = get_lattice_dimensions(struct)
-        x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
-        L = len(types_all)
-        ### реплицирование, потом передавать уже нормальные ячейки
-        tau_1 = tau1(Lx, Ly, x_all, y_all, z_all, L)
-        tau_2 = tau2(Lx, Ly, x_all, y_all, z_all, L)
-        tau_3 = tau3(Lx, Ly, x_all, y_all, z_all, L)
-        M_matr = M(params, types_all, L)
-        K_matr = K(params, types_all, L)
-        A = -omega**2 * M_matr + K_matr - tau_1 -1j * omega * tau_2 + omega **2 * tau_3
-        A_inv = np.linalg.inv(A)
-        b = np.zeros(3 * L, dtype = 'complex')
-        theta_rad = theta / 180 * np.pi
-        for i in range(L):
-              z = z_all[i]
-              phase = np.exp(-1j * omega * z / c)
-              b[3 * i] = np.cos(theta_rad) * phase
-              b[3 * i + 1] = np.sin(theta_rad) * phase
-              b[3 * i + 2] = 0
-        q = A_inv @ b
-        return q
+# def q(struct, params, theta, E0 = 0.03):
+#         print("Start...")
+#         struct, _ = rotate_structure_optical_axis_to_x(struct)
+#         a_vec, b_vec, c_vec = get_lattice_vectors(struct)
+#         x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
+#         L = len(types_all)
+#         ### реплицирование, потом передавать уже нормальные ячейки
+#         tau_1 = tau1(a_vec, b_vec, x_all, y_all, z_all, L)
+#         tau_2 = tau2(a_vec, b_vec, x_all, y_all, z_all, L)
+#         tau_3 = tau3(a_vec, b_vec, x_all, y_all, z_all, L)
+#         M_matr = M(params, types_all, L)
+#         K_matr = K(params, types_all, L)
+#         A = -omega**2 * M_matr + K_matr - tau_1 -1j * omega * tau_2 + omega **2 * tau_3
+#         A_inv = np.linalg.inv(A)
+#         b = np.zeros(3 * L, dtype = 'complex')
+#         theta_rad = theta / 180 * np.pi
+#         for i in range(L):
+#               z = z_all[i]
+#               phase = np.exp(-1j * omega * z / c)
+#               b[3 * i] = E0 * np.cos(theta_rad) * phase
+#               b[3 * i + 1] = E0 * np.sin(theta_rad) * phase
+#               b[3 * i + 2] = 0
+#         q = A_inv @ b
+#         return q
 
-def q_mod(struct, params, theta):
+def q_mod(a_vec, b_vec, x_all, y_all, z_all, types_all, theta = 0.0, E0 = 0.03, N = 100, N_perp = 15, omega = 3e15):
         print("Это q_mod")
-        struct, _ = rotate_structure_optical_axis_to_x(struct)
-        Lx, Ly, Lz = get_lattice_dimensions(struct)
-        x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
+
         L = len(types_all)
         ### реплицирование, потом передавать уже нормальные ячейки
-        tau_1 = tau1(Lx, Ly, x_all, y_all, z_all, L)
-        tau_2 = tau2(Lx, Ly, x_all, y_all, z_all, L)
-        tau_3 = tau3(Lx, Ly, x_all, y_all, z_all, L)
+        
+        tau_1 = tau1(a_vec, b_vec, x_all, y_all, z_all, L, N, N_perp)
+        tau_2 = tau2(a_vec, b_vec, x_all, y_all, z_all, L, N, N_perp)
+        tau_3 = tau3(a_vec, b_vec, x_all, y_all, z_all, L, N, N_perp)
         M_matr = M(params, types_all, L)
         K_matr = K(params, types_all, L)
         A = -omega**2 * M_matr + K_matr - tau_1 -1j * omega * tau_2 + omega **2 * tau_3
@@ -430,29 +408,92 @@ def q_mod(struct, params, theta):
         for i in range(L):
               z = z_all[i]
               phase = np.exp(-1j * omega * z / c)
-              b[3 * i] = np.cos(theta_rad) * phase
-              b[3 * i + 1] = np.sin(theta_rad) * phase
+              b[3 * i] = E0 * np.cos(theta_rad) * phase
+              b[3 * i + 1] = E0 * np.sin(theta_rad) * phase
               b[3 * i + 2] = 0
         q = np.linalg.solve(A, b)
+        print(f"norm(E) = {np.linalg.norm(b)}")
+        print(f"norm(tau_1 q) = {np.linalg.norm(tau_1 @ q)}")
+        print(f"max tau_1 q = {np.max(tau_1 @ q)}")
+        print(f"norm(omega * tau_2 q) = {omega * np.linalg.norm(tau_2 @ q)}")
+        print(f"max omega * tau_2 q = {omega * np.max(tau_2 @ q)}")
+        print(f"norm(omega^2 * tau_3 q) = {omega**2 * np.linalg.norm(tau_3 @ q)}")
+        print(f"max(omega^2 * tau_3 q) = {omega**2 * np.max(tau_3 @ q)}")
+        print(f"norm(K * q) = {np.linalg.norm(K_matr @ q)}")
+        print(f"norm(omega^2 * M_matr q) = {omega**2 * np.linalg.norm(M_matr @ q)}")
         return q
 
-def phase_analysis(q_vec, cif_path, idx = 0):
-        struct = Structure.from_file(cif_path)
-        S = len(struct)
-        q_atoms = q_vec.reshape(-1, 3)
-        q_components = q_atoms.reshape(S, N, 3)
-        phases = np.angle(q_components[idx])
-        return phases
+def phase_analysis(q_vec, x_all, y_all, z_all, S, idx = 0):
+        L = len(q_vec) // 3
+        N_cells = L // S
+        q_atoms = q_vec.reshape(L, 3)
+
+        q_components = q_atoms.reshape(N_cells, S, 3)
+        phases = np.angle(q_components[:,idx,:])
+
+        z_grid = z_all.reshape(N_cells, S)
+        x_grid = x_all.reshape(N_cells, S)
+        
+        coords_z = z_grid[:, idx]
+        coords_x = x_grid[:, idx]
+        return phases, coords_x, coords_z
+
+def n(q_vec, x_all, y_all, z_all, S, idx = 0):
+    L = len(q_vec) // 3
+    N_cells = L // S
+    q_atoms = q_vec.reshape(L, 3)
+
+    q_components = q_atoms.reshape(N_cells, S, 3)
+    n_np = np.angle(q_components[:,idx,:])
+
+    z_grid = z_all.reshape(N_cells, S)
+    x_grid = x_all.reshape(N_cells, S)
+    
+    coords_z = z_grid[:, idx]
+    coords_x = x_grid[:, idx]
+    
+
+N = 10
+N_perp = 10
+omega = 9e17
+cif_path = '/home/ubun/projects/light-propagation-in-single-crystals/md-simulation/output/unit_cells/MgS.cif'
+struct = Structure.from_file(cif_path)
+S_elements = len(struct)
+
+struct, _ = rotate_structure_optical_axis_to_x(struct)
+a_vec, b_vec, c_vec = get_lattice_vectors(struct)
+
+x_all, y_all, z_all, types_all = replicate_along_z(struct, N)
+print(z_all)
+print(struct)
+
 
 t1 = time.time()
-q_ans = q_mod(struct, params, 0)
+q_ans = q_mod(a_vec, b_vec, x_all, y_all, z_all, types_all, N, N_perp, omega)
 t2 = time.time()
 print(f"Time: {t2 - t1}")
-phases = phase_analysis(q_ans, cif_path)
-# print(phases[:,0])
+
+
+phases, coords_x, coords_z = phase_analysis(q_ans, x_all, y_all, z_all, S_elements)
+phases1, coords_x1, coords_z1 = phase_analysis(q_ans, x_all, y_all, z_all, S_elements, idx = 1)
+print(phases[:,0])
+print(f"q_ans: {q_ans}")
+print(f"coords_z: {coords_z}")
 N_np = np.arange(N)
-plt.plot(N_np, phases[:,0], label = 'x')
-plt.errorbar(N_np, phases[:,0], fmt = '.')
+ref_np = -omega * coords_z / c
+#Посмотреть на реплицированную ячейку
+
+
+plt.errorbar(coords_z, coords_x, fmt = '.')
+plt.errorbar(coords_z1, coords_x1, fmt = '.')
+plt.grid()
+plt.show()
+
+### Фазы
+
+plt.plot(coords_z, phases[:,0] % np.pi, label = 'x')
+plt.plot(coords_z, ref_np % np.pi, label = 'ref')
+plt.errorbar(coords_z, phases[:,0] % np.pi, fmt = '.')
 # plt.plot(N_np, phases[:,1], label = 'y')
 # plt.plot(N_np, phases[:,2], label = 'z')
 plt.legend()
